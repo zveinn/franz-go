@@ -630,6 +630,7 @@ func (s *sink) firstRespCheck(idempotent bool, version int16) {
 // handleReqClientErr is called when the client errors before receiving a
 // produce response.
 func (s *sink) handleReqClientErr(req *produceRequest, err error) {
+	fmt.Print("ERR:", err)
 	switch {
 	default:
 		s.cl.cfg.logger.Log(LogLevelWarn, "random error while producing, requeueing unattempted request", "broker", logID(s.nodeID), "err", err)
@@ -638,11 +639,15 @@ func (s *sink) handleReqClientErr(req *produceRequest, err error) {
 	case errors.Is(err, errUnknownBroker),
 		isDialNonTimeoutErr(err),
 		isRetryableBrokerErr(err):
-		updateMeta := !isRetryableBrokerErr(err)
-		if updateMeta {
+		unRetriable := !isRetryableBrokerErr(err)
+		if unRetriable {
 			s.cl.cfg.logger.Log(LogLevelInfo, "produce request failed, triggering metadata update", "broker", logID(s.nodeID), "err", err)
+			fmt.Println("no retry!")
+			s.cl.failBufferedRecords(err)
+		} else {
+			fmt.Println("retry!")
+			s.handleRetryBatches(req.batches, nil, req.backoffSeq, unRetriable, false, "failed produce request triggered metadata update")
 		}
-		s.handleRetryBatches(req.batches, nil, req.backoffSeq, updateMeta, false, "failed produce request triggered metadata update")
 
 	case errors.Is(err, ErrClientClosed):
 		s.cl.failBufferedRecords(ErrClientClosed)
